@@ -50,6 +50,26 @@ test.describe("ISB sample package", () => {
     await expect(page).toHaveURL(new RegExp(`#${SYSTEM_DESIGN_ANCHOR}$`));
     await expect(page.locator(`#${SYSTEM_DESIGN_ANCHOR}-heading`)).toBeInViewport();
     await expect(page.locator(`#${SYSTEM_DESIGN_ANCHOR}-heading`)).toBeFocused();
+    // TEMP-DIAG
+    await page.waitForTimeout(3000);
+    console.log(
+      "DIAG",
+      JSON.stringify(
+        await page.evaluate(() => ({
+          scrollY: window.scrollY,
+          h: window.innerHeight,
+          maxScroll: document.documentElement.scrollHeight,
+          toc: [...document.querySelectorAll('nav[aria-label="On this page"] a')].map((a) => [
+            a.getAttribute("href"),
+            a.getAttribute("aria-current"),
+          ]),
+          sections: [...document.querySelectorAll("section[data-section]")].map((el) => {
+            const r = el.getBoundingClientRect();
+            return [el.id, Math.round(r.top), Math.round(r.bottom)];
+          }),
+        })),
+      ),
+    );
     await expect(tocLink).toHaveAttribute("aria-current", "location");
     // The left sidebar highlights the same section.
     const sidebarLink = page
