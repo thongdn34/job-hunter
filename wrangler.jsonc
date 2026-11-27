@@ -44,8 +44,8 @@
     "ALLOWED_HOSTS": "*",
     // Cloudflare Access (Zero Trust) protects the app — set both (see docs/DEPLOYMENT.md), or set
     // ALLOW_UNAUTHENTICATED=true in .dev.vars for local previews only.
-    "CF_ACCESS_TEAM_DOMAIN": "",
-    "CF_ACCESS_AUD": "",
+    "CF_ACCESS_TEAM_DOMAIN": "curly-poetry-18cd.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "82e1bc5cf5937634ef7f5f75db2c12bb8518a9cea7a04fe7b317fbf3ba5f8861",
   },
   "observability": { "enabled": true },
 }
