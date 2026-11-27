@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: file:./prisma/ci.db
+      AI_PROVIDER: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Database (migrate + seed)
+        run: pnpm db:setup
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test
+      - run: pnpm build
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
+
+  cloudflare:
+    # Builds the Cloudflare Workers bundle (OpenNext) and smoke-tests it in workerd with a local D1
+    # database and local Workflows. Nothing is deployed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: D1 migrations are in sync with Prisma
+        run: pnpm cf:migrations --check
+      - name: Worker types are up to date
+        run: pnpm wrangler types cloudflare/worker-configuration.d.ts --env-file .dev.vars.example --strict-vars=false --check
+      - run: pnpm cf:typecheck
+      - run: pnpm cf:build
+      - name: Local D1 + preview
+        run: |
+          cp .dev.vars.example .dev.vars
+          pnpm cf:d1:migrate:local
+          pnpm wrangler dev --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf -o /dev/null http://localhost:8787/api/ai/status && break; sleep 1; done
+      - name: Smoke test (D1, Workflow generation, guards, exports)
+        run: pnpm cf:smoke
+      - name: Wrangler log
+        if: failure()
+        run: tail -200 wrangler.log
