@@ -14,6 +14,8 @@ import type { TocSection } from "./toc";
 /** Fraction of the viewport (from the top) inside which a section counts as "being read". */
 const READING_BAND_BOTTOM = 0.45;
 const POSITION_SAVE_DELAY_MS = 600;
+/** Overlap with the band's top edge below which a section is not considered "being read". */
+const BAND_EDGE_TOLERANCE_PX = 4;
 
 /**
  * Tracks the active section with an IntersectionObserver (sections overlapping the
@@ -31,12 +33,20 @@ export function useActiveSectionTracking(toc: TocSection[]): void {
 
     const atPageBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
 
+    // A section only counts while it overlaps the band by more than sub-pixel rounding: after a jump
+    // to a heading, the previous section ends exactly on the band's top edge and must not win.
+    const inReadingBand = (id: string): boolean => {
+      if (!visible.has(id)) return false;
+      const el = document.getElementById(id);
+      return !!el && el.getBoundingClientRect().bottom > STICKY_OFFSET_PX + BAND_EDGE_TOLERANCE_PX;
+    };
+
     const compute = () => {
       frame = 0;
       const previous = useActiveSectionStore.getState().sectionAnchor;
       let section = atPageBottom()
         ? sectionIds[sectionIds.length - 1]
-        : (sectionIds.find((id) => visible.has(id)) ?? previous ?? null);
+        : (sectionIds.find(inReadingBand) ?? previous ?? null);
       if (section && !document.getElementById(section)) section = null;
       let topic: string | null = null;
       if (topicHost && section === topicHost.anchorId) {
