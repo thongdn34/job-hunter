@@ -71,8 +71,11 @@ test.describe("export", () => {
     await expect(popup.getByText("BOOKMARK_ISB_BILINGUAL").first()).toBeVisible();
     // Everything is expanded in the print view, including answers collapsed in the app.
     await expect(popup.getByText(Q20.answerPhrase).first()).toBeVisible();
+    // The print view prints from an effect after hydration, which is slow for this page on CI.
     await expect
-      .poll(() => popup.evaluate(() => (window as unknown as { __printed?: boolean }).__printed === true))
+      .poll(() => popup.evaluate(() => (window as unknown as { __printed?: boolean }).__printed === true), {
+        timeout: 30_000,
+      })
       .toBe(true);
   });
 });

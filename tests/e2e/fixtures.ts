@@ -55,9 +55,26 @@ export async function resetProgress(request: APIRequestContext, slug = ISB_SLUG)
   expect(res.ok()).toBeTruthy();
 }
 
-/** Opens the sample package and waits until the client is interactive (progress panel hydrated). */
+/**
+ * Waits until React has hydrated the page. Server-rendered content is visible long before the event
+ * handlers exist (the sample page is ~2.4 MB of HTML, so on a slow CI runner hydration takes
+ * seconds); keys and clicks sent earlier are silently lost.
+ */
+export async function waitForHydration(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('[role="radiogroup"]');
+      return !!el && Object.keys(el).some((key) => key.startsWith("__reactFiber$"));
+    },
+    undefined,
+    { timeout: 45_000 },
+  );
+}
+
+/** Opens the sample package and waits until the client is interactive (hydrated). */
 export async function openIsbPackage(page: Page, hash = ""): Promise<void> {
   await page.goto(`${ISB_PATH}${hash}`);
   await expect(page.getByRole("heading", { level: 1, name: "Senior Front-End Developer" })).toBeVisible();
   await expect(page.getByRole("radiogroup", { name: "Content language" })).toBeVisible();
+  await waitForHydration(page);
 }

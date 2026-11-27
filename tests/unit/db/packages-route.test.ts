@@ -4,10 +4,12 @@ import { PackageNotFoundError, SamplePackageError } from "@/server/repositories/
 
 const getPackageBySlug = vi.fn();
 const deletePackage = vi.fn();
+// The delete route looks up an in-flight generation job first; none exists in these tests.
+const getPackageIdBySlug = vi.fn(async () => null);
 
 vi.mock("@/server/repositories/package-repository", async () => {
   const errors = await import("@/server/repositories/repository-errors");
-  return { ...errors, getPackageBySlug, deletePackage };
+  return { ...errors, getPackageBySlug, deletePackage, getPackageIdBySlug };
 });
 
 const { GET, DELETE } = await import("@/app/api/packages/[slug]/route");
