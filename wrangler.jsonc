@@ -19,7 +19,7 @@
       "binding": "DB",
       "database_name": "job-hunter",
       // `pnpm cf:d1:create` prints the id; paste it here before the first remote migration/deploy.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "fc41550d-b36b-4c9a-92a4-83cbb603ce18",
       "migrations_dir": "migrations",
     },
   ],
