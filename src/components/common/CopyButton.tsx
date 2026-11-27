@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
  */
 export function CopyButton({ text, label = "Copy", className, size = "sm", variant = "outline" }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | undefined>(undefined);
+  // The icon reset must not fire after unmount (it would update a removed component).
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
   const iconOnly = size === "icon";
   return (
     <Button
@@ -57,7 +60,8 @@ export function CopyButton({ text, label = "Copy", className, size = "sm", varia
         if (await copyToClipboard(value)) {
           setCopied(true);
           toast.success("Copied to clipboard");
-          window.setTimeout(() => setCopied(false), 1500);
+          window.clearTimeout(resetTimer.current);
+          resetTimer.current = window.setTimeout(() => setCopied(false), 1500);
         } else {
           toast.error("Could not copy to clipboard");
         }
