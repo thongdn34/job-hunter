@@ -59,11 +59,16 @@ async function fetchViaJina(
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
   let res: Response;
   try {
-    res = await fetchImpl(`${READER_BASE}${url.href}`, { method: "GET", headers, signal, redirect: "error" });
+    res = await fetchImpl(`${READER_BASE}${url.href}`, { method: "GET", headers, signal, redirect: "manual" });
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    console.warn(
+      "[jd/reader] request failed:",
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    );
     throw new JdExtractionError("FETCH_FAILED", "The reader service could not be reached.", { cause: error });
   }
+  // redirect: "manual" (workerd rejects "error"): a redirect answers 3xx, which is not ok either.
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
     throw new JdExtractionError("FETCH_FAILED", `The reader service responded with HTTP ${res.status}.`);

@@ -69,7 +69,7 @@ describe("readerFallbackFromEnv", () => {
     const headers = init?.headers as Record<string, string>;
     expect(headers["X-Target-Selector"]).toBe(".description__text");
     expect(headers.Authorization).toBe("Bearer k-123");
-    expect(init?.redirect).toBe("error");
+    expect(init?.redirect).toBe("manual");
   });
 
   it("omits the key and the LinkedIn selector when not needed", async () => {
@@ -79,6 +79,18 @@ describe("readerFallbackFromEnv", () => {
     const headers = fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>;
     expect(headers.Authorization).toBeUndefined();
     expect(headers["X-Target-Selector"]).toBeUndefined();
+  });
+
+  it("treats a redirect from the reader as a failure", async () => {
+    const redirected = readerFallbackFromEnv(
+      { JD_READER_FALLBACK: "jina" },
+      vi.fn<typeof fetch>(
+        async () => new Response(null, { status: 302, headers: { location: "https://evil.example/" } }),
+      ),
+    );
+    await expect(redirected!(new URL("https://a.example/x"), { linkedIn: false })).rejects.toMatchObject({
+      code: "FETCH_FAILED",
+    });
   });
 
   it("maps HTTP errors and network failures to FETCH_FAILED", async () => {

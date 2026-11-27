@@ -101,10 +101,15 @@ async function extractViaReader(
     page = await reader(new URL(target.toString()), { signal: options.signal, linkedIn });
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    // Messages are user-safe (no keys or URLs); visible in Workers logs when a fallback silently fails.
+    console.warn("[jd/extract] reader fallback failed:", error instanceof Error ? error.message : String(error));
     return null;
   }
   const text = cleanJdText(page.text);
-  if (text.length < MIN_EXTRACTED_CHARS || (looksLikeLoginWall(text) && text.length < 1500)) return null;
+  if (text.length < MIN_EXTRACTED_CHARS || (looksLikeLoginWall(text) && text.length < 1500)) {
+    console.warn(`[jd/extract] reader fallback returned no usable text (${text.length} chars)`);
+    return null;
+  }
 
   const fromTitle = linkedIn ? parseLinkedInPageTitle(page.title) : { title: page.title || undefined };
   return buildJd(
