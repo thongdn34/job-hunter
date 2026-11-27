@@ -22,3 +22,8 @@ OPENAI_COMPATIBLE_API_KEY=
 AI_GATEWAY_URL=
 # Only for authenticated gateways.
 AI_GATEWAY_TOKEN=
+
+# Third-party fallback for job pages that block direct fetching (sends the job URL to Jina Reader).
+# wrangler.jsonc enables it for the deployed Worker; leave empty to keep local previews offline.
+JD_READER_FALLBACK=
+JINA_API_KEY=

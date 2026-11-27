@@ -8,6 +8,7 @@ import { JdExtractionError } from "./errors";
 import { extractJobFromUrl, normalizeManualJd, stripSiteSuffix } from "./extract";
 import { extractFieldsFromHtml, findJsonLdJobPosting, htmlToText, jobPostingToFields } from "./html";
 import { canonicalLinkedInJobUrl, linkedInJobId, toLinkedInGuestUrl } from "./linkedin";
+import type { ReaderFetcher } from "./reader";
 import type { FetchedPage } from "./safe-fetch";
 
 const fixture = (name: string) =>
@@ -185,6 +186,86 @@ describe("extractJobFromUrl", () => {
     });
     await expect(extractJobFromUrl("file:///etc/passwd", { fetchPage })).rejects.toMatchObject({ code: "INVALID_URL" });
     expect(fetchPage).not.toHaveBeenCalled();
+  });
+});
+
+describe("reader fallback", () => {
+  const blocked = async () => page("", { status: 429 });
+  const readerText = `**Requirements:**\n\n* 5+ years of experience in Frontend Development.\n* Strong proficiency in Angular and TypeScript.\n* Solid knowledge of RxJS and NgRx.`;
+  const okReader = () =>
+    vi.fn<ReaderFetcher>(async () => ({
+      title: "Senior Frontend Developer at Tinhvan Software JSC. — Quận 7, Vietnam | LinkedIn Jobs",
+      text: readerText,
+    }));
+
+  it("reads a blocked LinkedIn job through the reader and flags it", async () => {
+    const reader = okReader();
+    const jd = await extractJobFromUrl("https://www.linkedin.com/jobs/view/4494986236/", {
+      fetchPage: blocked,
+      reader,
+      now: NOW,
+    });
+    expect(reader.mock.calls[0]?.[0].toString()).toBe("https://www.linkedin.com/jobs/view/4494986236/");
+    expect(reader.mock.calls[0]?.[1]).toMatchObject({ linkedIn: true });
+    expect(NormalizedJdSchema.parse(jd)).toEqual(jd);
+    expect(jd).toMatchObject({
+      companyName: "Tinhvan Software JSC.",
+      jobTitle: "Senior Frontend Developer",
+      origin: "url",
+      sourceUrl: "https://www.linkedin.com/jobs/view/4494986236/",
+    });
+    expect(jd.warnings.some((w) => w.includes("Jina Reader"))).toBe(true);
+  });
+
+  it("uses the page title for other sites", async () => {
+    const reader = vi.fn<ReaderFetcher>(async () => ({ title: "Frontend Engineer | ACME Careers", text: readerText }));
+    const jd = await extractJobFromUrl("https://careers.example.com/jobs/1", {
+      fetchPage: async () => page("", { status: 403 }),
+      reader,
+      now: NOW,
+    });
+    expect(jd.jobTitle).toBe("Frontend Engineer");
+    expect(reader.mock.calls[0]?.[1]).toMatchObject({ linkedIn: false });
+  });
+
+  it("is not used when the direct fetch works", async () => {
+    const reader = okReader();
+    await extractJobFromUrl("https://www.linkedin.com/jobs/view/4492566584/", {
+      fetchPage: async () => page(fixture("linkedin-guest.html")),
+      reader,
+      now: NOW,
+    });
+    expect(reader).not.toHaveBeenCalled();
+  });
+
+  it("is skipped for missing pages", async () => {
+    const reader = okReader();
+    await expect(
+      extractJobFromUrl("https://careers.example.com/jobs/1", {
+        fetchPage: async () => page("", { status: 404 }),
+        reader,
+      }),
+    ).rejects.toMatchObject({ code: "FETCH_FAILED" });
+    expect(reader).not.toHaveBeenCalled();
+  });
+
+  it("reports the original error when the reader fails or returns too little", async () => {
+    const failing = vi.fn<ReaderFetcher>(async () => {
+      throw new JdExtractionError("FETCH_FAILED", "reader down");
+    });
+    await expect(
+      extractJobFromUrl("https://careers.example.com/jobs/1", { fetchPage: blocked, reader: failing }),
+    ).rejects.toThrow(/rate-limiting/);
+    const empty = vi.fn<ReaderFetcher>(async () => ({ title: "", text: "Sign in" }));
+    await expect(
+      extractJobFromUrl("https://careers.example.com/jobs/1", { fetchPage: blocked, reader: empty }),
+    ).rejects.toThrow(/rate-limiting/);
+  });
+
+  it("is disabled by passing null", async () => {
+    await expect(
+      extractJobFromUrl("https://careers.example.com/jobs/1", { fetchPage: blocked, reader: null }),
+    ).rejects.toMatchObject({ code: "FETCH_FAILED" });
   });
 });
 

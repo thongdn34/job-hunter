@@ -5,6 +5,7 @@ import { JdExtractionError } from "./errors";
 import { extractFieldsFromHtml, htmlToText, type ExtractedFields } from "./html";
 import { canonicalLinkedInJobUrl, isLinkedInHost, toLinkedInGuestUrl } from "./linkedin";
 import { safeFetch, type FetchedPage, type SafeFetchOptions } from "./safe-fetch";
+import { parseLinkedInPageTitle, readerFallbackFromEnv, type ReaderFetcher } from "./reader";
 import { parsePublicHttpUrl } from "./url-guard";
 import { detectJobTitle } from "./title";
 
@@ -16,6 +17,20 @@ export interface ExtractJobOptions {
   fetchPage?: (url: URL, options: SafeFetchOptions) => Promise<FetchedPage>;
   signal?: AbortSignal;
   now?: Date;
+  /**
+   * Third-party reader tried when the site blocks direct fetching. Defaults to the one enabled by
+   * JD_READER_FALLBACK; pass null to disable it.
+   */
+  reader?: ReaderFetcher | null;
+}
+
+const READER_NOTE =
+  "The site blocked direct access, so this page was read through the Jina Reader service. Check the text for completeness.";
+
+/** Failures a different network vantage point could fix (not unsafe URLs, size limits or 404s). */
+function readerMayHelp(error: unknown): boolean {
+  if (!(error instanceof JdExtractionError) || error.pageGone) return false;
+  return error.code === "LOGIN_REQUIRED" || error.code === "FETCH_FAILED" || error.code === "NO_CONTENT";
 }
 
 /**
@@ -34,6 +49,24 @@ export async function extractJobFromUrl(rawUrl: string, options: ExtractJobOptio
     );
   }
 
+  try {
+    return await extractDirect(inputUrl, guestUrl, linkedIn, options);
+  } catch (error) {
+    const reader = options.reader === undefined ? readerFallbackFromEnv() : (options.reader ?? undefined);
+    if (!reader || !readerMayHelp(error)) throw error;
+    const viaReader = await extractViaReader(inputUrl, linkedIn, reader, options);
+    // The reader could not help either: report why the direct fetch failed.
+    if (!viaReader) throw error;
+    return viaReader;
+  }
+}
+
+async function extractDirect(
+  inputUrl: URL,
+  guestUrl: URL | null,
+  linkedIn: boolean,
+  options: ExtractJobOptions,
+): Promise<NormalizedJd> {
   const fetchPage = options.fetchPage ?? safeFetch;
   const page = await fetchPage(guestUrl ?? inputUrl, { signal: options.signal });
   assertUsableResponse(page, linkedIn);
@@ -52,7 +85,48 @@ export async function extractJobFromUrl(rawUrl: string, options: ExtractJobOptio
     );
   }
 
-  const warnings: string[] = [];
+  return buildJd(fields, inputUrl, options, []);
+}
+
+/** Returns null when the reader produced nothing usable (the caller then reports the original error). */
+async function extractViaReader(
+  inputUrl: URL,
+  linkedIn: boolean,
+  reader: ReaderFetcher,
+  options: ExtractJobOptions,
+): Promise<NormalizedJd | null> {
+  const target = canonicalLinkedInJobUrl(inputUrl) ?? inputUrl;
+  let page;
+  try {
+    page = await reader(new URL(target.toString()), { signal: options.signal, linkedIn });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    return null;
+  }
+  const text = cleanJdText(page.text);
+  if (text.length < MIN_EXTRACTED_CHARS || (looksLikeLoginWall(text) && text.length < 1500)) return null;
+
+  const fromTitle = linkedIn ? parseLinkedInPageTitle(page.title) : { title: page.title || undefined };
+  return buildJd(
+    {
+      title: fromTitle.title,
+      company: "company" in fromTitle ? fromTitle.company : undefined,
+      text,
+      strategy: "main-content",
+    },
+    inputUrl,
+    options,
+    [READER_NOTE],
+  );
+}
+
+function buildJd(
+  fields: ExtractedFields,
+  inputUrl: URL,
+  options: ExtractJobOptions,
+  extraWarnings: string[],
+): NormalizedJd {
+  const warnings: string[] = [...extraWarnings];
   if (!fields.title) warnings.push("The job title couldn't be detected — enter it manually.");
   if (!fields.company) warnings.push("The company name couldn't be detected — enter it manually.");
 
@@ -82,7 +156,9 @@ function assertUsableResponse(page: FetchedPage, linkedIn: boolean): void {
     );
   }
   if (status === 404 || status === 410) {
-    throw new JdExtractionError("FETCH_FAILED", "The job page was not found — the posting may have been removed.");
+    throw new JdExtractionError("FETCH_FAILED", "The job page was not found — the posting may have been removed.", {
+      pageGone: true,
+    });
   }
   if (status === 429) {
     throw new JdExtractionError(

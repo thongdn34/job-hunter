@@ -47,6 +47,9 @@
     "CF_ACCESS_TEAM_DOMAIN": "curly-poetry-18cd.cloudflareaccess.com",
     "CF_ACCESS_AUD": "82e1bc5cf5937634ef7f5f75db2c12bb8518a9cea7a04fe7b317fbf3ba5f8861",
     // AI Gateway (analytics + caching for model calls). Remove this line to call providers directly.
+    // LinkedIn answers 429/999 to Cloudflare's datacenter IPs. When a direct fetch is blocked, the job URL
+    // is read through Jina Reader (r.jina.ai) — a third party that sees the URL. Remove this line to disable.
+    "JD_READER_FALLBACK": "jina",
     "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/3c2106c241491449304902825c874aee/job-hunter",
   },
   "observability": { "enabled": true },

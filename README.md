@@ -270,7 +270,11 @@ build and E2E on every push to `main` and on every pull request.
 - **No web research.** Company research uses only the job description. Anything else is labelled
   `unverified` or `assumption` and turned into questions for the recruiter.
 - **URL extraction is best-effort.** Pages rendered by JavaScript, login walls and bot checks fail, and you
-  have to paste the text. LinkedIn only works for public `/jobs/view/<id>` postings.
+  have to paste the text. LinkedIn only works for public `/jobs/view/<id>` postings. LinkedIn blocks datacenter
+  IPs, so on Cloudflare a blocked page is retried through [Jina Reader](https://jina.ai/reader/)
+  (`JD_READER_FALLBACK=jina`, set in `wrangler.jsonc`). That sends the job URL to Jina, the result is flagged in the
+  JD warnings, and the keyless limit is 20 requests/minute. Remove the variable to disable it; it is off by
+  default under Node.js.
 - **CV upload** accepts PDF, TXT and Markdown only (no Word files). At most 12,000 characters of CV text are
   sent to the model.
 - **Coding exercises in generated packages are not executed.** Only the ISB sample's solutions are checked
