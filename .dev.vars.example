@@ -4,6 +4,10 @@
 
 # Local previews only — production must use Cloudflare Access (CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD).
 ALLOW_UNAUTHENTICATED=true
+# wrangler.jsonc holds the production Access settings; .dev.vars overrides them locally, so leave
+# these empty or Access is enforced against the local preview too.
+CF_ACCESS_TEAM_DOMAIN=
+CF_ACCESS_AUD=
 
 # AI provider (same variables as .env). `mock` runs the whole flow offline.
 AI_PROVIDER=mock
