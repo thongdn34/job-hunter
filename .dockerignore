@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+prisma/*.db
+prisma/*.db-journal
+playwright-report
+test-results
+.env
+.env.*
+!.env.example
+.open-next
+.wrangler
+.dev.vars

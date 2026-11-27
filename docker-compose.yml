@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: file:/data/job-hunter.db
+    volumes:
+      - job-hunter-data:/data
+volumes:
+  job-hunter-data:

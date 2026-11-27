@@ -1,0 +1,359 @@
+// Job Hunter — Run #10 data model.
+// SQLite for local-first development; every type used here is PostgreSQL-compatible
+// (switch `provider` + driver adapter to deploy on Postgres, see docs/ARCHITECTURE.md).
+//
+// Conventions
+// - Rich, schema-validated content lives in `data` Json columns (validated by Zod in src/domain).
+// - Columns that are filtered/sorted on are promoted to real columns.
+// - Status fields are strings (not DB enums) for SQLite/Postgres portability; allowed values are
+//   enforced by Zod schemas in src/domain.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Candidate
+// ---------------------------------------------------------------------------
+
+model CandidateProfile {
+  id                 String           @id @default(cuid())
+  fullName           String           @default("")
+  headline           String
+  yearsOfExperience  Int
+  location           String
+  targetRoles        Json // string[]
+  workingArrangement String
+  summary            String           @default("")
+  cvText             String?
+  cvFileName         String?
+  cvUploadedAt       DateTime?
+  experiences        WorkExperience[]
+  skills             TechnicalSkill[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
+model WorkExperience {
+  id                  String           @id @default(cuid())
+  profileId           String
+  profile             CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  company             String
+  role                String           @default("")
+  period              String           @default("")
+  summary             String           @default("")
+  highlights          Json // string[]
+  technologies        Json // string[]
+  includeInGeneration Boolean          @default(true)
+  order               Int              @default(0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([profileId])
+}
+
+model TechnicalSkill {
+  id          String           @id @default(cuid())
+  profileId   String
+  profile     CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name        String
+  category    String
+  proficiency String           @default("production")
+  createdAt   DateTime         @default(now())
+
+  @@unique([profileId, name])
+  @@index([profileId])
+}
+
+// ---------------------------------------------------------------------------
+// Companies, applications, job descriptions
+// ---------------------------------------------------------------------------
+
+model Company {
+  id           String           @id @default(cuid())
+  name         String
+  code         String           @unique // bookmark token, e.g. ISB
+  website      String?
+  applications JobApplication[]
+  sources      ResearchSource[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model JobApplication {
+  id              String             @id @default(cuid())
+  companyId       String
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobTitle        String
+  status          String             @default("draft") // draft | applied | interviewing | offer | rejected | archived
+  appliedAt       DateTime?
+  notes           String             @default("")
+  jobDescriptions JobDescription[]
+  packages        InterviewPackage[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([companyId])
+}
+
+model JobDescription {
+  id            String         @id @default(cuid())
+  applicationId String
+  application   JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  sourceUrl     String?
+  origin        String // url | manual | seed
+  rawText       String
+  normalized    Json // NormalizedJd
+  extractedAt   DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+
+  @@index([applicationId])
+}
+
+model ResearchSource {
+  id         String            @id @default(cuid())
+  companyId  String?
+  company    Company?          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  packageId  String?
+  package    InterviewPackage? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  title      String
+  url        String
+  kind       String            @default("web") // jd | company-site | web | other
+  verified   Boolean           @default(false)
+  accessedAt DateTime?
+  createdAt  DateTime          @default(now())
+
+  @@index([companyId])
+  @@index([packageId])
+}
+
+// ---------------------------------------------------------------------------
+// Interview package (Run #10)
+// ---------------------------------------------------------------------------
+
+model InterviewPackage {
+  id              String                 @id @default(cuid())
+  slug            String                 @unique
+  run             String                 @default("RUN_10")
+  applicationId   String?
+  application     JobApplication?        @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  companyName     String
+  companyCode     String
+  jobTitle        String
+  sourceUrl       String?
+  isSample        Boolean                @default(false)
+  sections        PackageSection[]
+  topics          InterviewTopic[]
+  questions       InterviewQuestion[]
+  codingExercises CodingExercise[]
+  systemDesigns   SystemDesignScenario[]
+  behavioral      BehavioralQuestion[]
+  flashcards      Flashcard[]
+  studyPlans      StudyPlan[]
+  progress        StudyProgress?
+  mockSessions    MockInterviewSession[]
+  generationJobs  GenerationJob[]
+  sources         ResearchSource[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+}
+
+/// One row per Run #10 section. `content` holds the Zod-validated section payload
+/// for document-like sections; list sections are additionally normalized into
+/// their own tables (questions, exercises, ...).
+model PackageSection {
+  id          String           @id @default(cuid())
+  packageId   String
+  package     InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  key         String // SectionKey
+  status      String           @default("pending") // pending | generating | ready | failed | stale
+  content     Json?
+  error       String?
+  inputHash   String?
+  model       String?
+  generatedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([packageId, key])
+}
+
+model InterviewTopic {
+  id        String              @id @default(cuid())
+  packageId String
+  package   InterviewPackage    @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  topicKey  String // stable id within package, e.g. "realtime"
+  code      String // bookmark suffix, e.g. "WEBSOCKET"
+  order     Int                 @default(0)
+  data      Json // InterviewTopic
+  questions InterviewQuestion[]
+
+  @@unique([packageId, topicKey])
+}
+
+model InterviewQuestion {
+  id         String             @id @default(cuid())
+  packageId  String
+  package    InterviewPackage   @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemId     String // stable id within package, e.g. "isb-q07"
+  number     Int
+  topicId    String?
+  topic      InterviewTopic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  difficulty String
+  priority   String
+  data       Json // InterviewQuestion (without followUps)
+  followUps  FollowUpQuestion[]
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([packageId, itemId])
+  @@index([packageId, number])
+}
+
+model FollowUpQuestion {
+  id         String            @id @default(cuid())
+  questionId String
+  question   InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  itemId     String
+  order      Int               @default(0)
+  data       Json // FollowUp
+
+  @@unique([questionId, itemId])
+}
+
+model CodingExercise {
+  id         String           @id @default(cuid())
+  packageId  String
+  package    InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemId     String
+  number     Int
+  difficulty String
+  priority   String
+  data       Json // CodingExercise
+
+  @@unique([packageId, itemId])
+}
+
+model SystemDesignScenario {
+  id         String           @id @default(cuid())
+  packageId  String
+  package    InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemId     String
+  number     Int
+  difficulty String
+  priority   String
+  data       Json // SystemDesignScenario
+
+  @@unique([packageId, itemId])
+}
+
+model BehavioralQuestion {
+  id         String           @id @default(cuid())
+  packageId  String
+  package    InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemId     String
+  number     Int
+  difficulty String
+  priority   String
+  data       Json // BehavioralQuestion
+
+  @@unique([packageId, itemId])
+}
+
+model Flashcard {
+  id        String           @id @default(cuid())
+  packageId String
+  package   InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  itemId    String
+  order     Int              @default(0)
+  data      Json // Flashcard
+
+  @@unique([packageId, itemId])
+}
+
+model StudyPlan {
+  id        String           @id @default(cuid())
+  packageId String
+  package   InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  planKey   String // 1d | 3d | 7d
+  data      Json // StudyPlan
+
+  @@unique([packageId, planKey])
+}
+
+model StudyProgress {
+  id        String           @id @default(cuid())
+  packageId String           @unique
+  package   InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  data      Json // PackageProgress
+  updatedAt DateTime         @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Mock interviews
+// ---------------------------------------------------------------------------
+
+model MockInterviewSession {
+  id           String                @id @default(cuid())
+  packageId    String
+  package      InterviewPackage      @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  status       String                @default("active") // active | completed
+  averageScore Float?
+  answers      MockInterviewAnswer[]
+  startedAt    DateTime              @default(now())
+  completedAt  DateTime?
+
+  @@index([packageId])
+}
+
+model MockInterviewAnswer {
+  id                   String               @id @default(cuid())
+  sessionId            String
+  session              MockInterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  itemId               String
+  answer               String
+  revealedBeforeSubmit Boolean              @default(false)
+  overall              Float
+  evaluation           Json // MockEvaluation
+  createdAt            DateTime             @default(now())
+
+  @@index([sessionId])
+}
+
+// ---------------------------------------------------------------------------
+// Generation + preferences
+// ---------------------------------------------------------------------------
+
+model GenerationJob {
+  id              String           @id @default(cuid())
+  packageId       String
+  package         InterviewPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  status          String           @default("queued") // queued | running | succeeded | partial | failed | cancelled
+  sections        Json // SectionKey[] requested
+  progress        Json // { [sectionKey]: { status, error?, startedAt?, finishedAt? } }
+  provider        String?
+  model           String?
+  error           String?
+  cancelRequested Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+
+  @@index([packageId])
+}
+
+model UserPreference {
+  id              String   @id @default("default")
+  language        String   @default("bilingual") // en | vi | bilingual
+  theme           String   @default("system") // light | dark | system
+  aiProvider      String?
+  aiModel         String?
+  includeElfie    Boolean  @default(false)
+  lastPackageSlug String?
+  updatedAt       DateTime @updatedAt
+}

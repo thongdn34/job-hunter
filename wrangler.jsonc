@@ -1,0 +1,56 @@
+{
+  // Cloudflare Workers deployment (OpenNext). Node.js deployments ignore this file.
+  // Setup, costs and limits: docs/DEPLOYMENT.md → "Cloudflare Workers".
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "job-hunter",
+  // Custom entry: Cloudflare Access check + /api/internal guard in front of the OpenNext handler,
+  // plus the GenerationWorkflow class.
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-11-20",
+  // esbuild's keep_names wraps functions in a __name() helper; functions serialized into inline
+  // <script>s (e.g. the next-themes bootstrap) then throw "__name is not defined" in the browser.
+  "keep_names": false,
+  // global_fetch_strictly_public: fetch() can only reach public addresses (SSRF protection for
+  // job-URL extraction at connect time).
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "job-hunter",
+      // `pnpm cf:d1:create` prints the id; paste it here before the first remote migration/deploy.
+      "database_id": "fc41550d-b36b-4c9a-92a4-83cbb603ce18",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "workflows": [
+    {
+      "name": "job-hunter-generation",
+      "binding": "GENERATION_WORKFLOW",
+      "class_name": "GenerationWorkflow",
+    },
+  ],
+  // Workers Rate Limiting (free): 10 job-URL extractions per minute per client IP.
+  "ratelimits": [
+    {
+      "name": "JD_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 },
+    },
+  ],
+  "vars": {
+    // Cloudflare only routes this Worker's own hostnames to it, so the DNS-rebinding Host check is
+    // not needed; the Origin/CSRF check in src/proxy.ts still applies.
+    "ALLOWED_HOSTS": "*",
+    // Cloudflare Access (Zero Trust) protects the app — set both (see docs/DEPLOYMENT.md), or set
+    // ALLOW_UNAUTHENTICATED=true in .dev.vars for local previews only.
+    "CF_ACCESS_TEAM_DOMAIN": "curly-poetry-18cd.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "82e1bc5cf5937634ef7f5f75db2c12bb8518a9cea7a04fe7b317fbf3ba5f8861",
+    // AI Gateway (analytics + caching for model calls). Remove this line to call providers directly.
+    // LinkedIn answers 429/999 to Cloudflare's datacenter IPs. When a direct fetch is blocked, the job URL
+    // is read through Jina Reader (r.jina.ai) — a third party that sees the URL. Remove this line to disable.
+    "JD_READER_FALLBACK": "jina",
+    "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/3c2106c241491449304902825c874aee/job-hunter",
+  },
+  "observability": { "enabled": true },
+}

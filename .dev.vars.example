@@ -1,0 +1,29 @@
+# Local Cloudflare preview (`pnpm cf:preview`, workerd + local D1/Workflows).
+# Copy to .dev.vars (git-ignored). When .dev.vars exists, wrangler does not read .env.
+# In production set secrets with `wrangler secret put NAME` and vars in wrangler.jsonc.
+
+# Local previews only — production must use Cloudflare Access (CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD).
+ALLOW_UNAUTHENTICATED=true
+# wrangler.jsonc holds the production Access settings; .dev.vars overrides them locally, so leave
+# these empty or Access is enforced against the local preview too.
+CF_ACCESS_TEAM_DOMAIN=
+CF_ACCESS_AUD=
+
+# AI provider (same variables as .env). `mock` runs the whole flow offline.
+AI_PROVIDER=mock
+AI_MODEL=
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+OPENAI_COMPATIBLE_BASE_URL=
+OPENAI_COMPATIBLE_API_KEY=
+
+# Optional Cloudflare AI Gateway in front of OpenAI/Anthropic (caching, cost analytics, rate limits):
+# https://gateway.ai.cloudflare.com/v1/<ACCOUNT_ID>/<GATEWAY_ID>
+AI_GATEWAY_URL=
+# Only for authenticated gateways.
+AI_GATEWAY_TOKEN=
+
+# Third-party fallback for job pages that block direct fetching (sends the job URL to Jina Reader).
+# wrangler.jsonc enables it for the deployed Worker; leave empty to keep local previews offline.
+JD_READER_FALLBACK=
+JINA_API_KEY=
